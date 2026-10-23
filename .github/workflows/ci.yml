@@ -1,0 +1,55 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: uatu_test
+          POSTGRES_PASSWORD: local-test-only
+          POSTGRES_DB: uatu_frontend_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U uatu_test -d uatu_frontend_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      UATU_TEST_SESSION_DATABASE_URL: postgres://uatu_test:local-test-only@127.0.0.1:5432/uatu_frontend_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - run: yarn lint
+      - run: yarn build
+      - run: yarn test
+      - run: yarn playwright install --with-deps chromium
+      - run: yarn test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results
+          path: test-results/
+          retention-days: 3
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: docker build -t uatu-frontend:ci .
